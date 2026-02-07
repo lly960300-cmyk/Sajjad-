@@ -1,71 +1,72 @@
-            import streamlit as st
-import sqlite3
+import streamlit as st
 from datetime import datetime
 import hashlib
 
-# --- إعداد قاعدة البيانات ---
-# قمنا بتغيير اسم الجدول لتجنب تضارب البيانات القديمة
-conn = sqlite3.connect('chat_db.db', check_same_thread=False)
-c = conn.cursor()
+# --- إعداد الصفحة ---
+st.set_page_config(page_title="مجلسنا الملون", page_icon="🎨")
 
-c.execute('''CREATE TABLE IF NOT EXISTS messages_v3
-             (user TEXT, content TEXT, timestamp TEXT, color TEXT)''')
-conn.commit()
-
-# وظيفة لتوليد لون ثابت لكل اسم مستخدم بناءً على الحروف
+# --- دالة لتوليد الألوان ---
 def get_user_color(username):
     hash_object = hashlib.md5(username.encode())
     return f"#{hash_object.hexdigest()[:6]}"
 
-def save_message(user, content):
-    timestamp = datetime.now().strftime("%I:%M %p")
-    color = get_user_color(user)
-    c.execute("INSERT INTO messages_v3 (user, content, timestamp, color) VALUES (?, ?, ?, ?)", 
-              (user, content, timestamp, color))
-    conn.commit()
+# --- إدارة الرسائل (باستخدام ذاكرة الموقع) ---
+if "messages_list" not in st.session_state:
+    st.session_state.messages_list = []
 
-def get_messages():
-    c.execute("SELECT user, content, timestamp, color FROM messages_v3 ORDER BY rowid ASC")
-    return c.fetchall()
-
-# --- واجهة التطبيق ---
-st.set_page_config(page_title="مجلسنا الملون", page_icon="🎨")
-
-# كلمة المرور الخاصة بك
-PASSWORD = "123" 
+# كلمة المرور
+PASSWORD = "123"
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
+# --- شاشة الدخول ---
 if not st.session_state["authenticated"]:
     st.title("🔑 دخول آمن")
-    pwd = st.text_input("أدخل كلمة المرور الخاصة بالشلة:", type="password")
+    pwd = st.text_input("أدخل كلمة المرور:", type="password")
     if st.button("دخول"):
         if pwd == PASSWORD:
             st.session_state["authenticated"] = True
             st.rerun()
         else:
-            st.error("الكلمة غلط يا صاحبي!")
+            st.error("الكلمة غلط!")
 else:
-    st.title(" المنظمه السريه 🕵 ")
-    
-    # اختيار اسم المستخدم
+    # --- شاشة اختيار الاسم ---
     if "username" not in st.session_state:
-        st.subheader("أهلاً بك! اختر اسماً مستعاراً للدخول")
-        user_input = st.text_input("الاسم:", placeholder="مثلاً: صقر")
-        if st.button("بدء الدردشة"):
+        st.title("💬 اختر اسمك")
+        user_input = st.text_input("الاسم المستعار:")
+        if st.button("بدء"):
             if user_input:
                 st.session_state["username"] = user_input
                 st.rerun()
-            else:
-                st.warning("رجاءً اكتب اسماً أولاً")
         st.stop()
-    
-    st.sidebar.markdown(f"### 👤 المستخدم الحالي:\n**{st.session_state['username']}**")
-    
-    # عرض الرسائل بتنسيق جميل
-    all_messages = get_messages()
-    for msg_user, msg_content, msg_time, msg_color in all_messages:
-        with st.chat_message("user" if msg_user == st.session_state["username"] else "assistant"):
-            # عرض الاسم باللون الخاص به والوقت بخط صغير
-            st.markdown(f"<span style
+
+    # --- واجهة الدردشة ---
+    st.title("💬 غرفة المحادثة")
+    st.sidebar.markdown(f"👤 المستخدم: **{st.session_state['username']}**")
+
+    # عرض الرسائل
+    for msg in st.session_state.messages_list:
+        with st.chat_message("user" if msg["user"] == st.session_state["username"] else "assistant"):
+            st.markdown(
+                f"<span style='color:{msg['color']}; font-weight:bold;'>{msg['user']}</span> "
+                f"<small style='color:gray; margin-left:10px;'>{msg['time']}</small>", 
+                unsafe_allow_html=True
+            )
+            st.write(msg["content"])
+
+    # إرسال رسالة جديدة
+    if prompt := st.chat_input("اكتب رسالتك..."):
+        new_msg = {
+            "user": st.session_state["username"],
+            "content": prompt,
+            "time": datetime.now().strftime("%I:%M %p"),
+            "color": get_user_color(st.session_state["username"])
+        }
+        st.session_state.messages_list.append(new_msg)
+        st.rerun()
+
+    # زر المسح
+    if st.sidebar.button("🗑️ تصفية الشاشة"):
+        st.session_state.messages_list = []
+        st.rerun()
