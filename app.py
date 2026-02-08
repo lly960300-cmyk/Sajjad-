@@ -1,129 +1,112 @@
 import streamlit as st
 import sqlite3
 from datetime import datetime
-import hashlib
-import time
+import base64
+from io import BytesIO
+from PIL import Image
 
-# --- إعداد قاعدة البيانات ---
-DB_FILE = "chat_pro_final.db" 
+# --- إعدادات الصفحة ---
+st.set_page_config(page_title="Telegram VIP", page_icon="✈️")
 
-def get_connection():
-    return sqlite3.connect(DB_FILE, check_same_thread=False)
-
+# --- قاعدة البيانات ---
+DB_FILE = "tg_final_v5.db"
 def init_db():
-    conn = get_connection()
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS messages
-                 (user TEXT, content TEXT, timestamp TEXT, color TEXT, reply_to TEXT, avatar TEXT, msg_id TEXT)''')
+                 (user TEXT, content TEXT, timestamp TEXT, avatar TEXT)''')
     conn.commit()
     conn.close()
 
 init_db()
 
-def get_user_color(username):
-    hash_object = hashlib.md5(username.encode())
-    return f"#{hash_object.hexdigest()[:6]}"
+# دالة لتحويل الصورة إلى نص (عشان تنحفظ بقاعدة البيانات)
+def img_to_bytes(img_file):
+    if img_file:
+        img = Image.open(img_file).convert("RGB")
+        img.thumbnail((150, 150))
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        return base64.b64encode(buf.getvalue()).decode()
+    return ""
 
-def save_message(user, content, reply_to=None, avatar="👤"):
-    timestamp = datetime.now().strftime("%I:%M %p")
-    msg_id = str(time.time()) # معرف فريد لكل رسالة لمنع تكرار المفاتيح
-    color = get_user_color(user)
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("INSERT INTO messages (user, content, timestamp, color, reply_to, avatar, msg_id) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-              (user, content, timestamp, color, reply_to, avatar, msg_id))
-    conn.commit()
-    conn.close()
+# --- واجهة المستخدم ---
+if "auth" not in st.session_state:
+    st.session_state.auth = False
 
-def get_messages():
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT user, content, timestamp, color, reply_to, avatar, msg_id FROM messages ORDER BY rowid ASC")
-    data = c.fetchall()
-    conn.close()
-    return data
-
-# --- تصميم الواجهة ---
-st.set_page_config(page_title="ديوانية الشلة VIP", page_icon="🔥")
-
-st.markdown('''
-<style>
-[data-testid="stAppViewContainer"] {
-    background-color: #dfd7d0;
-    background-image: url("https://www.transparenttextures.com/patterns/gray-floral.png");
-}
-.reply-box {
-    background-color: rgba(0,0,0,0.1);
-    border-right: 5px solid #25D366;
-    padding: 8px;
-    margin-bottom: 5px;
-    border-radius: 5px;
-    font-size: 0.85em;
-    direction: rtl;
-}
-</style>
-''', unsafe_allow_html=True)
-
-PASSWORD = "123" 
-
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-if not st.session_state["authenticated"]:
-    st.title("🔐 بوابة القروب")
-    pwd = st.text_input("كلمة السر:", type="password")
-    if st.button("دخول"):
-        if pwd == PASSWORD:
-            st.session_state["authenticated"] = True
+if not st.session_state.auth:
+    st.title("✈️ Telegram Login")
+    if st.text_input("كلمة السر", type="password") == "123":
+        if st.button("دخول"):
+            st.session_state.auth = True
             st.rerun()
-        else:
-            st.error("كلمة السر خطأ!")
 else:
-    if "username" not in st.session_state:
-        st.title("⚙️ إعداداتك")
-        u = st.text_input("اسمك المستعار:")
-        a = st.selectbox("اختر صورتك الشخصية:", ["👤", "😎", "🥷", "🦁", "🤖", "👻", "🦄", "👑"])
-        if st.button("حفظ ودخول"):
-            if u:
-                st.session_state["username"] = u
-                st.session_state["avatar"] = a
-                st.rerun()
-        st.stop()
+    # إعدادات الملف الشخصي والخلفية في الجانب
+    st.sidebar.title("⚙️ الإعدادات")
+    if "user_name" not in st.session_state:
+        st.session_state.user_name = st.sidebar.text_input("اسمك المستعار", "مستخدم")
+        
+    uploaded_avatar = st.sidebar.file_uploader("ارفع صورتك الشخصية 🖼️", type=['png', 'jpg', 'jpeg'])
+    if uploaded_avatar:
+        st.session_state.my_avatar = img_to_bytes(uploaded_avatar)
+    else:
+        st.session_state.my_avatar = ""
 
-    st.title("المنظمه")
-    
-    # القائمة الجانبية
-    st.sidebar.markdown(f"### مرحباً {st.session_state['avatar']}\n## {st.session_state['username']}")
-    if st.sidebar.button("🗑️ مسح المحادثة بالكامل"):
-        conn = get_connection()
-        conn.cursor().execute("DELETE FROM messages")
-        conn.commit()
-        st.rerun()
+    bg_file = st.sidebar.file_uploader("غير خلفية المحادثة 🌆", type=['png', 'jpg', 'jpeg'])
+    if bg_file:
+        bg_bytes = base64.b64encode(bg_file.read()).decode()
+        st.markdown(f"""<style>.stApp {{ background-image: url("data:image/png;base64,{bg_bytes}"); background-size: cover; }}</style>""", unsafe_allow_html=True)
+    else:
+        st.markdown("""<style>.stApp { background-color: #e5ddd5; }</style>""", unsafe_allow_html=True)
+
+    # تنسيق الفقاعات (CSS)
+    st.markdown("""
+    <style>
+    .msg-container { display: flex; flex-direction: column; }
+    .bubble { padding: 10px; border-radius: 15px; margin: 5px; max-width: 70%; position: relative; font-family: sans-serif; }
+    .my-msg { align-self: flex-end; background-color: #efffde; border-bottom-right-radius: 2px; }
+    .other-msg { align-self: flex-start; background-color: #ffffff; border-bottom-left-radius: 2px; }
+    .avatar-img { width: 35px; height: 35px; border-radius: 50%; margin: 5px; vertical-align: middle; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.title("💬 Telegram VIP")
 
     # عرض الرسائل
-    messages = get_messages()
-    for m_user, m_content, m_time, m_color, m_reply, m_avatar, m_id in messages:
-        is_me = m_user == st.session_state["username"]
-        with st.chat_message("user" if is_me else "assistant", avatar=m_avatar):
-            if m_reply:
-                st.markdown(f"<div class='reply-box'><b>↩️ رد على:</b><br>{m_reply}</div>", unsafe_allow_html=True)
-            
-            st.markdown(f"<span style='color:{m_color}; font-weight:bold;'>{m_user}</span> <small style='color:gray;'>{m_time}</small>", unsafe_allow_html=True)
-            st.write(m_content)
-            
-            # تم إضافة m_id هنا لضمان عدم تكرار المفتاح
-            if st.button("رد", key=f"reply_{m_id}"):
-                st.session_state["reply_to_info"] = f"{m_user}: {m_content[:30]}..."
-                st.rerun()
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT user, content, timestamp, avatar FROM messages")
+    for u, con, ts, av in c.fetchall():
+        is_me = u == st.session_state.user_name
+        align = "my-msg" if is_me else "other-msg"
+        
+        # عرض الصورة الشخصية إذا وجدت
+        av_html = f'<img src="data:image/png;base64,{av}" class="avatar-img">' if av else '👤'
+        
+        st.markdown(f"""
+        <div class="msg-container">
+            <div class="bubble {align}">
+                {av_html} <b>{u}</b> <br> {con} <br>
+                <small style="color:gray; font-size:10px;">{ts}</small>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    conn.close()
 
-    if "reply_to_info" in st.session_state:
-        st.warning(f"تكتب رداً على: {st.session_state['reply_to_info']}")
-        if st.button("إلغاء الرد"):
-            del st.session_state["reply_to_info"]
-            st.rerun()
+    # الإرسال
+    if prompt := st.chat_input("اكتب رسالة..."):
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        now = datetime.now().strftime("%I:%M %p")
+        my_av = st.session_state.get("my_avatar", "")
+        c.execute("INSERT INTO messages VALUES (?, ?, ?, ?)", (st.session_state.user_name, prompt, now, my_av))
+        conn.commit()
+        conn.close()
+        st.rerun()
 
-    if prompt := st.chat_input("اكتب رسالتك هنا..."):
-        reply = st.session_state.get("reply_to_info")
-        save_message(st.session_state["username"], prompt, reply, st.session_state["avatar"])
-        if "reply_to_info" in st.session_state: del st.session_state["reply_to_info"]
+    if st.sidebar.button("مسح السجل"):
+        conn = sqlite3.connect(DB_FILE)
+        conn.cursor().execute("DELETE FROM messages")
+        conn.commit()
+        conn.close()
         st.rerun()
