@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>الفارس ضد الشياطين</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body { margin: 0; background: #111; color: white; font-family: Arial; overflow: hidden; touch-action: manipulation; }
+        canvas { display: block; background: #222; border-bottom: 5px solid #444; margin: 0 auto; }
+        .controls { display: flex; justify-content: center; padding: 20px; gap: 15px; }
+        .btn { width: 70px; height: 70px; background: #555; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; user-select: none; active { background: #888; } }
+        .stats { position: absolute; top: 10px; left: 10px; font-size: 18px; text-shadow: 2px 2px #000; }
+    </style>
+</head>
+<body>
+    <div class="stats">HP: <span id="hp">100</span> | Level: <span id="lvl">1</span></div>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="controls">
+        <div class="btn" id="leftBtn">⬅️</div>
+        <div class="btn" id="jumpBtn">🚀</div>
+        <div class="btn" id="attackBtn">⚔️</div>
+        <div class="btn" id="rightBtn">➡️</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = 300;
+
+        let player = { x: 50, y: 200, w: 40, h: 50, color: '#00f', dy: 0, jumping: false, swordLvl: 1 };
+        let demons = [];
+        let level = 1;
+        let hp = 100;
+
+        function spawnDemons() {
+            demons = [];
+            for(let i=0; i < level + 1; i++) {
+                demons.push({ x: canvas.width + (i*200), y: 200, w: 40, h: 70, hp: 30*level, speed: 2 });
+            }
+        }
+
+        function update() {
+            // الجاذبية
+            player.dy += 0.8;
+            player.y += player.dy;
+            if (player.y > 200) { player.y = 200; player.dy = 0; player.jumping = false; }
+
+            // تحريك الشياطين
+            demons.forEach((d, index) => {
+                d.x -= d.speed;
+                // اصطدام الشيطان باللاعب
+                if (Math.abs(player.x - d.x) < 30 && Math.abs(player.y - d.y) < 50) {
+                    hp -= 0.5;
+                    document.getElementById('hp').innerText = Math.ceil(hp);
+                }
+            });
+
+            if (hp <= 0) { alert("خسرت! ستبدأ من جديد"); location.reload(); }
+            if (demons.length === 0) { level++; document.getElementById('lvl').innerText = level; spawnDemons(); }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // رسم الفارس (بسيط حالياً)
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+            ctx.fillStyle = "gold"; // السيف
+            ctx.fillRect(player.x + 35, player.y + 20, 15, 5);
+
+            // رسم الشياطين
+            ctx.fillStyle = "red";
+            demons.forEach(d => { ctx.fillRect(d.x, d.y, d.w, d.h); });
+
+            update();
+            requestAnimationFrame(draw);
+        }
+
+        // أزرار التحكم باللمس
+        document.getElementById('leftBtn').ontouchstart = () => player.x -= 20;
+        document.getElementById('rightBtn').ontouchstart = () => player.x += 20;
+        document.getElementById('jumpBtn').ontouchstart = () => { if(!player.jumping) { player.dy = -15; player.jumping = true; } };
+        document.getElementById('attackBtn').ontouchstart = () => {
+            demons = demons.filter(d => Math.abs(player.x - d.x) > 60);
+        };
+
+        spawnDemons();
+        draw();
+    </script>
+</body>
+</html>
